@@ -1,0 +1,17 @@
+---
+title: "¡Bienvenido!"
+description: |
+   
+site: distill::distill_website
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+```
+
+<div style="text-align: center;">
+#### CONOCE MÁS SOBRE LOS ESPACIOS CULTURALES DE LA CIUDAD AUTÓNOMA DE BUENOS AIRES
+</div>
+
+![](Imagen.png)

@@ -1,0 +1,324 @@
+---
+title: "Trabajo Final"
+description: |
+  Instrumentos de Análisis Urbanos II - MEU 2023
+author:
+  - name: Anyelén Giraudo 
+date: "`r Sys.Date()`"
+output: distill::distill_article
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+### Introducción
+
+Uno de los aspectos más notables de la Ciudad Autónoma de Buenos Aires es su herencia cultural. Su riqueza histórica, diversidad artística, músicos, escritores y arquitectura, no dejan de sorprender a quienes la recorren y visitan.
+El presente trabajo práctico se propone estudiar la distribución espacial de los Espacios Culturales de la ciudad; aquellos sitios destinados a la congregación de personas para realizar lecturas, visitar exposiciones, asistir a espectáculos o shows musicales, acudir a actividades teatrales o muestras audiovisuales.
+
+### Activación de Librería
+
+Para comenzar se procede a instalar todas las librerías necesarias para el estudio.
+
+```{r}
+library(tidyverse)
+library(skimr)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(sf)
+library(geofacet)
+```
+
+### Importación de Datos
+
+* [Espacios culturales de la Ciudad Autónoma de Buenos Aires](https://data.buenosaires.gob.ar/dataset/espacios-culturales)
+
+Consiste en un listado de espacios culturales públicos, privados e independientes localizados en la Ciudad de Buenos Aires, como por ejemplo: bares, bibliotecas, calesitas, centros culturales, monumentos y lugares históricos, disquerías, espacios de exhibición, espacios de formación, espacios escénicos, espacios feriales, librerías y salas de cine.
+
+```{r}
+(datos_EC <- read_csv(file = "https://cdn.buenosaires.gob.ar/datosabiertos/datasets/ministerio-de-cultura/espacios-culturales/espacios-culturales.csv"))
+```
+
+* [Comunas de la Ciudad Autónoma de Buenos Aires](https://data.buenosaires.gob.ar/dataset/comunas)
+
+Contiene la información geográfica de las Comunas de la Ciudad Autónoma de Buenos Aires, según lo estipulado por la Ley Orgánica de Comunas (Ley Nº 1777/2005).
+
+```{r}
+comunas <- st_read("data/comunas_wgs84.shp",
+                    stringsAsFactors = TRUE,
+                    options = "ENCODING=UTF-8")
+```
+
+### Análisis de la información disponible
+
+```{r}
+skimr::skim(datos_EC)
+```
+
+```{r}
+summary(datos_EC)
+```
+
+Al indagar en la base de datos de los Espacios Culturales de CABA, es posible realizar las siguientes observaciones:
+
+* El dataframe cuenta con 2.968 filas y 29 columnas, donde 23 son de tipo 'character' y 6 son de tipo 'numeric'.
+* Contiene aspectos relativos a la función, categoría y nombre del establecimiento; datos sobre la programación, sucursal y salas; información geográfica como la dirección, el barrio, la comuna, latitud y longitud; datos de contacto como teléfono, mail y redes sociales; e información extra con menor relevancia para el presente análisis.
+* Si bien la base de datos es diversa y detallada, es preciso destacar que muchas de estas variables no cuentan con información, evidenciándose en su lugar la notación "N/A".
+* En cuanto a las variables numéricas, un dato apreciable a simple vista es que los espacios culturales con mayor capacidad de congregación de personas corresponden a "espacios escénicos" y "salas de cine", como por ejemplo: Movistar Arena, Luna Park, Gran Rex, entre otros. 
+
+### Organización de la información
+
+El estudio de la distribución geográfica de los espacios culturales puede prescindir de ciertas columnas de la base de datos, conservando únicamente 6 variables: Función principal - Establecimiento - Capacidad total - Comuna - Latitud - Longitud.
+
+```{r}
+(EC_infobase <- datos_EC %>% 
+  select(FUNCION_PRINCIPAL, ESTABLECIMIENTO, CAPACIDAD_TOTAL, COMUNA, LATITUD, LONGITUD))
+```
+
+```{r}
+EC_infobase %>%
+  group_by(FUNCION_PRINCIPAL) %>%
+  summarise(CANTIDAD = n()) %>%
+  arrange(desc(CANTIDAD)) %>%  
+  ggplot(aes(x = reorder(FUNCION_PRINCIPAL, CANTIDAD), y = CANTIDAD)) +
+  geom_bar(stat = "identity", fill = "#4c92b5", alpha = 0.7) +
+  labs(title = "TIPOS DE ESPACIOS CULTURALES",
+       subtitle = "Ciudad Autónoma de Buenos Aires",
+       x = "Espacios Culturales", y = "Cantidad Disponible",
+       caption = "FUENTE: BA Data") +
+  theme_gray() + 
+  theme(plot.margin = margin(0.25, 1, 0.25, 0.1, "cm"), #margenes del gráfico
+        panel.background = element_rect(fill = "gray100", colour = "gray100", linewidth = 2, linetype = "solid"), #fondo del gráfico
+        panel.grid.major = element_line(linewidth = 0.5, linetype = "dashed", colour = "gray80"), #lineas del gráfico
+        panel.grid.minor = element_line(linewidth = 0.25, linetype = "dashed", colour = "gray90"), #líneas auxiliares
+        title=element_text(size=12, face = "bold"), #titulo del gráfico
+        plot.caption=element_text(face = "italic", colour = "gray35",size=5), #nota al pie
+        axis.title.x = element_text(size = 10, face = "plain"),  #cambia el tamaño y el color del texto del eje X
+        axis.title.y = element_text(size = 10, face = "plain")) + #cambia el tamaño y el color del texto del eje Y
+  coord_flip()
+```
+
+Una vez acotado el universo de estudio, al efectuar un primer gráfico de aproximación rápida a la información, se evidencia la superioridad numérica de las bibliotecas (más de 600 establecimientos); seguidas por centros culturales, librerías, salas de teatro, monumentos y lugares históricos con más de 300 localidades; continuando por bares, museos, espacios de formación, galerías de arte y disquerías con más de 100 opciones; y demás espacios que no superan las 50 instalaciones por categoría.
+
+Si bien la oferta es variada y extensa, parte de estas actividades no son puramente culturales. Puesto que el objetivo de esta investigación es estudiar la distribución de aquellos espacios que promueven la cultura en la ciudad, se procede a conservar sólo los sitios destinados a la congregación de personas para la lectura, exposiciones, espectáculos, shows musicales, actividades teatrales y muestras audiovisuales.
+Por consiguiente, se han descartado ofertas más comerciales como los bares, disquerías, librerías y espacios feriales; alternativas recreativas como las calesitas; y los espacios de formación en donde se superpone lo cultural con lo educativo. 
+
+```{r}
+(EC_recorte <- EC_infobase %>%
+  filter(FUNCION_PRINCIPAL %in% c("BIBLIOTECA", "CENTRO CULTURAL", "SALA DE TEATRO", "MONUMENTOS Y LUGARES HISTORICOS", "MUSEO", "GALERIA DE ARTE", "CLUB DE MUSICA EN VIVO", "ANFITEATRO", "SALA DE CINE", "CLUB DE MUSICA EN VIVO - NUEVO")) %>% 
+  mutate(FUNCION_PRINCIPAL = str_replace(FUNCION_PRINCIPAL, "CLUB DE MUSICA EN VIVO - NUEVO", "CLUB DE MUSICA EN VIVO")))
+```
+
+```{r}
+EC_recorte %>%
+  group_by(FUNCION_PRINCIPAL) %>%
+  summarise(CANTIDAD = n()) %>%
+  arrange(desc(CANTIDAD)) %>%  
+  ggplot(aes(x = reorder(FUNCION_PRINCIPAL, CANTIDAD), y = CANTIDAD)) +
+  geom_bar(stat = "identity", fill = "#4c92b5", alpha = 0.7) +
+  labs(title = "TIPOS DE ESPACIOS CULTURALES",
+       subtitle = "Ciudad Autónoma de Buenos Aires",
+       x = "Espacios Culturales", y = "Cantidad Disponible",
+       caption = "FUENTE: BA Data") +
+  theme_gray() + 
+  theme(plot.margin = margin(0.25, 1, 0.25, 0.1, "cm"), #margenes del gráfico
+        panel.background = element_rect(fill = "gray100", colour = "gray100", linewidth = 2, linetype = "solid"), #fondo del gráfico
+        panel.grid.major = element_line(linewidth = 0.5, linetype = "dashed", colour = "gray80"), #lineas del gráfico
+        panel.grid.minor = element_line(linewidth = 0.25, linetype = "dashed", colour = "gray90"), #líneas auxiliares
+        title=element_text(size=12, face = "bold"), #titulo del gráfico
+        plot.caption=element_text(face = "italic", colour = "gray35",size=5),#nota al pie
+        axis.title.x = element_text(size = 10, face = "plain"),  #cambia el tamaño y el color del texto del eje X
+        axis.title.y = element_text(size = 10, face = "plain")) + #cambia el tamaño y el color del texto del ej
+  coord_flip()
+```
+
+### Análisis de la distribución espacial en CABA
+
+Esta análisis cuantitativo sobre la oferta de espacios culturales en la ciudad, puede enriquecerse al incorporar la variable espacial, con el objetivo de visualizar dónde se implanta cada uno. A tal efecto, se transforma el dataframe de espacios culturales en un objeto espacial sf, y se realiza un gráfico que superpone dicha distribución con la geografía de las comunas.
+
+```{r}
+(EC_puntos <- EC_recorte %>% 
+  filter(!is.na(LONGITUD), !is.na(LATITUD)) %>% 
+  st_as_sf(coords = c("LONGITUD", "LATITUD"), crs = 4326) %>% 
+  mutate(lat = st_coordinates(.)[,1],
+         lon = st_coordinates(.)[,2]))
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = comunas, fill=NA) +
+  geom_sf(data = EC_puntos, color = "#4c92b5", alpha = 0.7) +
+  #geom_sf_label(data = comunas, aes(label = COMUNAS), size = 2, label.padding = unit(0.8, "mm")) +
+  labs(title = "Espacios Culturales de la Ciudad Autónoma de Buenos Aires",
+       subtitle = "Distribución espacial",
+       caption = "FUENTE: BA Data") +
+  theme_void()+
+  theme(plot.margin = margin(0.25, 1, 0.25, 0.1, "cm"), #margenes del gráfico
+        panel.background = element_rect(fill = "gray100", colour = "gray100", linewidth = 2, linetype = "solid"), #fondo del gráfico
+        title=element_text(size=12, face = "bold"), #titulo del gráfico
+        plot.caption=element_text(face = "italic", colour = "gray35",size=5)) #nota al pie
+```
+
+Rápidamente observamos que la mayor cantidad de puntos (espacios culturales) se concentran en las comunas 1, 2, 3, 5, 14 y 15. A su vez, la forma en que se encuentran concentrados, sugiere que su implantación sucede en torno a avenidas o trazados viales de relevancia para la ciudad.
+
+Para corroborar esta percepción, se procede a conformar un mapa coroplético que otorgue un valor cromático a las comunas según la cantidad de espacios culturales que poseen. Para ello, es necesario complementar la información de las comunas con la de los espacios culturales, uniendo los dataframe "comunas" y "EC_recorte" de la siguiente manera.
+
+Si bien ambas bases de datos (comunas | EC_recorte) cuentan con una columna que refiere al nombre de las comunas, las mismas presentan diferencias en el nombre de la columna (COMUNAS | COMUNA) y en el contenido de sus filas (1 | COMUNA 1). De igual modo, la información de espacios culturales contiene una notación extra denominada "COMUNA NA" que debe ser removida previamente.
+
+```{r}
+unique(comunas$COMUNAS)
+unique(EC_recorte$COMUNA)
+```
+
+Se procede a modificar la base de datos 'EC_recorte': eliminando la notación "COMUNA NA", agrupando la información por comuna, determinando la cantidad de espacios culturales por comuna, conservando sólo los números que identifican a las comunas y transformando dicha variable en números.
+
+```{r}
+(EC_recorte_union <- EC_recorte %>% 
+  filter(COMUNA != "COMUNA NA") %>% 
+  group_by(COMUNA) %>% 
+  summarise(CANTIDAD = n ()) %>% 
+  mutate(COMUNA = gsub("COMUNA ", "", COMUNA),
+         COMUNA = as.numeric(COMUNA)))
+```
+
+De igual modo se trabaja sobre los datos 'comunas': renombrando la columna "COMUNAS" como "COMUNA", y conservando únicamente la información correspondiente a 'COMUNA', 'AREA' y 'geometry'.
+
+```{r}
+(comunas_union <- comunas %>%
+  rename(COMUNA = COMUNAS) %>%
+  select(COMUNA, AREA, geometry))
+```
+
+En este punto ya estamos en condiciones de unir ambos dataframe en "EC_comunas", obteniendo información sobre la cantidad de espacios culturales que contiene cada comuna, junto al área y la base geográfica de dichas jurisdicciones.
+
+```{r}
+(EC_comunas <- left_join(comunas_union, EC_recorte_union , by = "COMUNA"))
+```
+
+<span style="color: gray; font-size: 12px; line-height: 0.7;">Nota: cabe mencionar que este proceso de limpieza y transformación previa de los datos para lograr su unificación ha sido una de las situaciones más problemáticas del estudio; fundamentalmente cuando se intentaba remover las notaciones "COMUNA " que antecedían a los números de cada comuna en el dataframe "EC_recorte"</span>
+
+```{r}
+ggplot() +
+  geom_sf(data=EC_comunas, aes(fill=CANTIDAD)) + 
+  geom_sf_label(data = comunas, aes(label = COMUNAS), size = 2, label.padding = unit(0.8, "mm")) +
+  labs(title = "Oferta de Espacios Culturales por Comuna",
+       subtitle = "Ciudad Autónoma de Buenos Aires",
+       x = " ", y = " ",
+       fill = "Cantidad de Espacios Culturales",
+       caption = "FUENTE: BA Data") +
+  scale_fill_distiller(palette = "Spectral",
+                       breaks = c(50, 150, 300, 450, 600)) +  #etiquetas deseadas) +
+  guides(fill=guide_legend(title.position = "top", ncol=5))+ #posición titulo leyenda y columnas datos
+  theme(plot.margin = margin(0.25, 1, 0.25, 0.1, "cm"), #margenes del gráfico
+        panel.background = element_rect(fill = "gray100", colour = "gray100", linewidth = 2, linetype = "solid"), #fondo del gráfico
+        panel.grid.major = element_line(linewidth = 0.5, linetype = "dashed", colour = "gray80"), #lineas del gráfico
+        panel.grid.minor = element_line(linewidth = 0.25, linetype = "dashed", colour = "gray90"), #líneas auxiliares
+        title=element_text(size=12, face = "bold"), #titulo del gráfico
+        legend.key.size = unit(0.4, "cm"), #alto de cuadrados de referencia
+        legend.key.width = unit(0.4,"cm"), #ancho de cuadrados de referencia 
+        legend.position="bottom", #ubicacion de leyenda
+        legend.direction = "horizontal", #dirección de la leyenda
+        legend.title=element_text(size=7, face = "plain"), #tamaño de titulo de leyenda
+        legend.text=element_text(size=5), #tamaño de texto de leyenda
+        plot.caption=element_text(face = "italic", colour = "gray35",size=5)) #nota al pie
+```
+
+Este mapa coroplético asigna un color a las comunas según la cantidad de espacios culturales que poseen. De este modo, se evidencian más de 600 establecimientos en la Comuna 1; seguida por las Comunas 2, 14, 15, 3, 4, 5 y 13 con entre 150 y 300 sitios; culminando con aquellas más periféricas que cuentan con menos de 100 lugares.
+
+No obstante, la superficie de las comunas puede generar ciertas distorsiones en los resultados, siendo conveniente realizar comparaciones según la densidad de espacios disponibles (cantidad de espacios culturales / área de las comunas).
+
+```{r}
+ggplot()+ 
+  geom_sf(data=EC_comunas, aes(fill=CANTIDAD/(AREA/1000000))) + 
+  geom_sf_label(data = comunas, aes(label = COMUNAS), size = 2, label.padding = unit(0.8, "mm")) +
+  labs(title = "Oferta de espacios culturales por comuna",
+       subtitle = "Ciudad Autónoma de Buenos Aires",
+       x = " ", y = " ",
+       fill = "Densidad",
+       caption= "FUENTE: BA Data") +
+  scale_fill_distiller(palette = "Spectral",
+                       breaks = c(2, 5, 10, 20, 30, 38)) +  #etiquetas deseadas
+  guides(fill=guide_legend(title.position = "top", ncol=10))+ #posición titulo leyenda y columnas datos
+  theme(plot.margin = margin(0.25, 1, 0.25, 0.1, "cm"), #margenes del gráfico
+        panel.background = element_rect(fill = "gray100", colour = "gray100", linewidth = 2, linetype = "solid"), #fondo del gráfico
+        panel.grid.major = element_line(linewidth = 0.5, linetype = "dashed", colour = "gray80"), #lineas del gráfico
+        panel.grid.minor = element_line(linewidth = 0.25, linetype = "dashed", colour = "gray90"), #líneas auxiliares
+        title=element_text(size=12, face = "bold"), #titulo del gráfico
+        legend.key.size = unit(0.4, "cm"), #alto de cuadrados de referencia
+        legend.key.width = unit(0.4,"cm"), #ancho de cuadrados de referencia 
+        legend.position="bottom", #ubicacion de leyenda
+        legend.direction = "horizontal", #dirección de la leyenda
+        legend.title=element_text(size=7, face = "plain"), #tamaño de titulo de leyenda
+        legend.text=element_text(size=5), #tamaño de texto de leyenda
+        plot.caption=element_text(face = "italic", colour = "gray35",size=5)) #nota al pie
+```
+
+De esta manera, es posible comprender que la comuna 2 es la que presenta más oferta (superando el 30%); seguida por las comunas 1, 3 y 5, 14 y 15 con entre un 20% y 30%; las 6, 4 y 13 con entre un 10% y 20%; y las jurisdicciones periféricas con menos del 5%.
+
+Para culminar con el estudio, no sólo es importante detectar cuál es la comuna con mayor disponibilidad de espacios culturales, sino también comprender de qué esta compuesta dicha oferta y cómo se distribuyen estos usos en el territorio.
+Con este fin se ha recurrido al paquete 'geoAr', importando la grilla de la Ciudad Autónoma de Buenos Aires, para luego, mediante un tratamiento de los datos correspondientes a los espacios culturales, obtener un mapa facetado que represente dicha información deseada:
+
+Se procede a importar la grilla espacial de CABA, renombrando la columna "name" por "name_COMUNA", conservando sólo los números que identifican a cada comuna y eliminando los 0 que les preceden.
+
+
+```{r}
+(CABA <- geoAr::get_grid(district = "CABA") %>% 
+  rename(name_COMUNA = name) %>% 
+  mutate(name_COMUNA = gsub("COMUNA ", "", name_COMUNA),
+         name_COMUNA = as.integer(name_COMUNA)))
+```
+
+De igual modo se trabaja sobre el dataframe "EC_recorte": renombrando la columna "COMUNA" como "name_COMUNA", eliminando la notación "COMUNA NA", agrupando la información por el tipo de espacio cultural y las comunas, determinando la cantidad de espacios culturales por comuna, conservando sólo los números que identifican a las comunas y transformando dicha variable en números.
+
+```{r}
+(EC_cant_comuna <- EC_recorte %>% 
+  rename (name_COMUNA = COMUNA) %>% 
+  filter (name_COMUNA != "COMUNA NA") %>%
+  group_by (FUNCION_PRINCIPAL, name_COMUNA) %>% 
+  summarise (CANTIDAD = n()) %>% 
+  mutate(name_COMUNA = gsub("COMUNA ", "", name_COMUNA),
+         name_COMUNA = as.numeric(name_COMUNA)))
+```
+
+```{r}
+ggplot(EC_cant_comuna) +
+  geom_bar(aes(x = reorder(FUNCION_PRINCIPAL, CANTIDAD), y = CANTIDAD),
+           stat = "identity", fill = "#4c92b5", alpha = 0.7) +
+    labs(title = "ESPACIOS CULTURALES POR COMUNA",
+       subtitle = "Categorización por tipo de espacio cultural",
+       x = "Cantidad de Ambientes",
+       y = "Propiedades en Venta",
+       caption = "FUENTE: BA Data") +
+  facet_geo(~name_COMUNA, grid=CABA)+
+  theme(plot.margin = margin(0.25, 1, 0.25, 0.1, "cm"), #ajusta los margenes del gráfico
+        panel.background = element_rect(fill = "gray100", colour = "gray100", linewidth = 2, linetype = "solid"), #fondo del gráfico
+        panel.grid.major = element_line(linewidth = 0.5, linetype = "dashed", colour = "gray80"), #lineas del gráfico
+        panel.grid.minor = element_line(linewidth = 0.25, linetype = "dashed", colour = "gray90"), #líneas auxiliares
+        title=element_text(size=12, face = "bold"), #título del gráfico
+        plot.caption=element_text(face = "italic", colour = "gray35",size=5),#nota al pie
+        axis.title.x = element_text(size = 7, face = "plain"),  #cambia el tamaño y el color del texto del eje X
+        axis.title.y = element_text(size = 7, face = "plain"), #cambia el tamaño y el color del texto del ej
+        axis.text.x = element_text(size = 2),
+        axis.text.y = element_text(size = 2)) +
+  coord_flip()
+```
+
+
+Este mapa facetado expone rápidamente que la mayor diversidad de espacios culturales se encuentra en las comunas 1, 2, 3, 13 y 14; seguidas por las comunas 4, 15, 6, 7 y 12; y muy por debajo por las 11, 10, 9 y 8. 
+Asimismo, si analizamos los datos con más detalle, observamos que:
+
+* Las bibliotecas se concentran en el área central, principalmente en las comunas 1, 2 y 3.
+* Los centros culturales predominan sobre el centro geográfico de CABA, en la comuna 5, 15, 1, 14, 4 y 3.
+* Los monumentos y lugares históricos coinciden con las áreas más consolidadas de la comuna 1 y 2.
+* Los teatros se ubican fundamentalmente en la comuna 1, seguida por la 5.
+* Los museos se expanden principalmente por las comunas 1, 2, 4 y 3.
+* Las galerías de arte se agrupan mayormente en las comunas 1, 14 y 15.
+* La comuna 8 sólo cuenta con centros culturales, bibliotecas y excepcionales anfiteatros; la 9, 10, 11 y 12 con bibliotecas, centros culturales, sala de teatro, y excepcionales museos, anfiteatros y monumentos históricos.
+
+### Consideraciones finales
+
+A lo largo de todo el estudio se ha verificado y reforzado la idea sobre que la Ciudad de Buenos Aires cuenta con una oferta cultural numerosa y diversificada a lo largo de todo su territorio. 
+No obstante, es preciso mencionar que su distribución no es homogénea. Gran parte de esta diversidad se concentra en las áreas centrales debido a sus condiciones urbanas, carácter histórico y grados de consolidación; mientras que en el sur y la periferia, los espacios culturales se reducen considerablemente. 
+De igual modo, sería interesante continuar este análisis e indagar sobre cómo es la afluencia de público hacia estos lugares: qué tipo de personas acuden a ellos, con qué frecuencia lo hacen, qué cantidad de usuarios reciben a diario estos espacios.

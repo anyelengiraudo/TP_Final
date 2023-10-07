@@ -1,0 +1,14 @@
+name: "TP_Final"
+title: "Instrumentos de Análisis Urbanos II - Trabajo Final"
+description: |
+  Instrumento de Análisis Urbanos II - MEU 2023
+output_dir: "docs"
+navbar:
+  right:
+    - text: "Inicio"
+      href: index.html
+    - text: "Desarrollo"
+      href: desarrollo.html
+    - text: "Sobre mi"
+      href: about.html
+output: distill::distill_article
